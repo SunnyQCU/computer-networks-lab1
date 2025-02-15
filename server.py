@@ -6,12 +6,15 @@
 #             send the requested file back to the client
 #
 import socket
+import os
+
 serverPort = 50000
 serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serverSocket.bind(("", serverPort))
 serverSocket.listen(1)
 print("Server is ready to recieve connections")
 
+""" Old open_file function with try except
 def open_file(request, connectionSocket):
     try:
         file = open(request, "rb")
@@ -35,17 +38,36 @@ def open_file(request, connectionSocket):
         return -1
 
     return file
+"""
+
+def open_file(path, connectionSocket):
+    if not os.path.exists(path):
+        connectionSocket.send("error: file not found".encode())
+        connectionSocket.close() # DC from client if fail
+        print("error: open file failed")
+        return False
+    file = open(path, "rb")
+
+    # To separate success message from main file
+    connectionSocket.send("success: file exist".encode())
+    client_confirm = connectionSocket.recv(1024).decode()
+    if client_confirm != "SUCCESS":
+        file.close()
+        connectionSocket.close() # DC from client if fail
+        print("error: client connection failed")
+        return False
+    print("success: file opened")
+    return file
 
 while True:
     # recieve manifest file request
     connectionSocket, clientAddr = serverSocket.accept()
     video_name = connectionSocket.recv(1024).decode()
-    mpd_request = "./data/" + video_name + "/manifest.mpd" # manifest file
+    mpd_path = "./data/" + video_name + "/manifest.mpd" # manifest file
 
-    # opening file
-    mpd_file = open_file(mpd_request, connectionSocket)
-    if mpd_file == -1:
-        continue # reloop if no file or file failed opening
+    mpd_file = open_file(mpd_path, connectionSocket)
+    if not mpd_file:
+        continue
 
     # sending mpd file
     while True:
@@ -55,8 +77,5 @@ while True:
         connectionSocket.send(chunk) # encoding not needed for file opened in binary
     
     mpd_file.close()
-    # mpd_file = open(mpd_request, "rb") # open for reading in binary
-    # connectionSocket.send(mpd_file.encode())
 
-    # connectionSocket.send()
     connectionSocket.close()

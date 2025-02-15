@@ -13,6 +13,7 @@ import sys
 # added myself
 import socket
 import os
+import xml.etree.ElementTree as ET #ok according to assignment
 
 """
     the client function
@@ -27,24 +28,16 @@ import os
 
 """
 
-def client(server_addr, server_port, video_name, alpha, chunks_queue):
-    # setup socket and files
-    clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    clientSocket.connect((server_addr, server_port))
-    if not os.path.exists("tmp"):
-        os.makedirs("tmp")
-
-    # Check if mpd file exists
+def check_video(clientSocket, video_name):
     clientSocket.send(video_name.encode())
     mpd_file_res = clientSocket.recv(64).decode()
     print(mpd_file_res + '\n')
     if mpd_file_res == "error: not found" or mpd_file_res == "error: IO failed":
         clientSocket.close() #DC from server if not found
-        return -1 #close if it doesn't exist
+        return False #close if it doesn't exist
+    return True
     
-    # Acknowledged recieved
-    clientSocket.send("SUCCESS".encode())
-    
+def recieve_data(clientSocket):
     # Actually recieve and print mpd file
     mpd_data = b""
     while (True): #keep on collecting data till there's none left
@@ -53,12 +46,29 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
             print("Done receiving\n")
             break
         mpd_data += chunk
+    return mpd_data
 
-    mpd_text = mpd_data.decode() 
+def client(server_addr, server_port, video_name, alpha, chunks_queue):
+    # setup socket and files
+    clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    clientSocket.connect((server_addr, server_port))
+    if not os.path.exists("tmp"):
+        os.makedirs("tmp")
+
+    if not check_video(clientSocket, video_name): return False # video doesn't exist
+    
+    # Acknowledged recieved
+    clientSocket.send("SUCCESS".encode())
+    
+    mpd_text = recieve_data(clientSocket).decode() # mpd file
     print(mpd_text) 
     
 
     # print(mpd_file) #can it actually print??
+
+    clientSocket.close()
+    return
+
 
     """
     chunk_num = 0
@@ -72,21 +82,19 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         chunk_num += 1
     """
 
-    clientSocket.close()
-    return
-
-    # to visualize the adaptive video streaming, store the chunk in a temporary folder and
-    # pass the path of the chunk to the video player
-    # 
-    # create temporary directory if not exist
-    # if not os.path.exists("tmp"):
-    #     os.makedirs("tmp")
-    # # write chunk to the temporary directory
-    # with open(f"tmp/chunk_0.m4s", "wb") as f:
-    #     f.write(chunk)
-    # # put the path of the chunk to the queue
-    # chunks_queue.put(f"tmp/chunk_0.m4s")
-
+"""
+    to visualize the adaptive video streaming, store the chunk in a temporary folder and
+    pass the path of the chunk to the video player
+    
+    create temporary directory if not exist
+    if not os.path.exists("tmp"):
+        os.makedirs("tmp")
+    # write chunk to the temporary directory
+    with open(f"tmp/chunk_0.m4s", "wb") as f:
+        f.write(chunk)
+    # put the path of the chunk to the queue
+    chunks_queue.put(f"tmp/chunk_0.m4s")
+"""
 
 # parse input arguments and pass to the client function
 if __name__ == '__main__':
