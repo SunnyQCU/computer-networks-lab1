@@ -17,7 +17,6 @@ def open_file(request, connectionSocket):
         file = open(request, "rb")
         success_msg = "success: file exist"
         connectionSocket.send(success_msg.encode())
-        return file
     except FileNotFoundError:
         err_msg = "error: not found"
         connectionSocket.send(err_msg.encode())
@@ -29,6 +28,14 @@ def open_file(request, connectionSocket):
         connectionSocket.close()
         return -1
 
+    # confirm accept and ensure data separation
+    client_confirm = connectionSocket.recv(1024).decode()
+    if client_confirm != "SUCCESS":
+        connectionSocket.close() # DC from client if fail
+        return -1
+
+    return file
+
 while True:
     # recieve manifest file request
     connectionSocket, clientAddr = serverSocket.accept()
@@ -36,10 +43,18 @@ while True:
     mpd_request = "./data/" + video_name + "/manifest.mpd" # manifest file
 
     # opening file
-    file = open_file(mpd_request, connectionSocket)
-    if file == -1:
-        continue 
+    mpd_file = open_file(mpd_request, connectionSocket)
+    if mpd_file == -1:
+        continue # reloop if no file or file failed opening
+
+    # sending mpd file
+    while True:
+        chunk = mpd_file.read(4096)
+        if not chunk:
+            break
+        connectionSocket.send(chunk) # encoding not needed for file opened in binary
     
+    mpd_file.close()
     # mpd_file = open(mpd_request, "rb") # open for reading in binary
     # connectionSocket.send(mpd_file.encode())
 

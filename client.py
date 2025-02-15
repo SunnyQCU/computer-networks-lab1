@@ -34,16 +34,31 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     if not os.path.exists("tmp"):
         os.makedirs("tmp")
 
-    # send request for manifest file of video and recieve
+    # Check if mpd file exists
     clientSocket.send(video_name.encode())
-    result = clientSocket.recv(64).decode()
-    print(result)
-    if result == "error: not found" or result == "error: IO failed": #failed
+    mpd_file_res = clientSocket.recv(64).decode()
+    print(mpd_file_res + '\n')
+    if mpd_file_res == "error: not found" or mpd_file_res == "error: IO failed":
         clientSocket.close() #DC from server if not found
-        return -1
-        
+        return -1 #close if it doesn't exist
     
-    #mpd_file = clientSocket.recv(4096)
+    # Acknowledged recieved
+    clientSocket.send("SUCCESS".encode())
+    
+    # Actually recieve and print mpd file
+    mpd_data = b""
+    while (True): #keep on collecting data till there's none left
+        chunk = clientSocket.recv(4096)
+        if not chunk: #finished receiving data
+            print("Done receiving\n")
+            break
+        mpd_data += chunk
+
+    mpd_text = mpd_data.decode() 
+    print(mpd_text) 
+    
+
+    # print(mpd_file) #can it actually print??
 
     """
     chunk_num = 0
