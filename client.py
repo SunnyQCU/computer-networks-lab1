@@ -7,13 +7,14 @@
 
 import threading
 from queue import Queue
-from video_player import play_chunks #only needed for video laying
+# from video_player import play_chunks #only needed for video laying
 import sys
 
 # added myself
 import socket
 import os
 import xml.etree.ElementTree as ET #ok according to assignment
+import time # for timing chunk requests
 
 FSIZE_BYTES = 128
 
@@ -70,6 +71,19 @@ def parse_bitrates(mpd_text):
         print(b)
     return bitrates
 
+def update_tput(tcurr, alpha, chunk_size, tstart, tfin): # len(data) is the chunk size
+    tnew = chunk_size / (tfin - tstart)
+    return alpha * tnew + (1 - alpha) * tcurr
+
+def update_bitrate(tcurr, bitrates):
+    bitrate = bitrates[0] # default lowest bitrate
+    tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
+    maxbitrate = tbitrate / 1.5 # throughput >= 1.5 * bitrate
+    for i in range(len(bitrates)): # cycle to highest bitrate
+        if maxbitrate >= bitrates[i]: bitrate = bitrates[i]
+        else: break
+    return bitrate
+
 def client(server_addr, server_port, video_name, alpha, chunks_queue):
     # setup socket and files
     clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -94,11 +108,17 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         os.makedirs("tmp")
 
     chunk_num = 0
-    bitrate = bitrates[0] #temporary lowest bitrate
+    bitrate = bitrates[0] # starting bitrate is always lowest
+
+    tcurr = 0 # starting throughput should be 0
 
     while (True): #loop of .m4s files
+        print(f"Tcurr: {tcurr}, bitrate: {bitrate}")
         chunk_name = video_name + "_" + str(bitrate) + "_" + str(chunk_num).zfill(5)
         print(chunk_name)
+
+        tstart = time.time() #start of request
+
         send_req(clientSocket, chunk_name)
         res = receive_msg(clientSocket)
         if res == "error: file not found" or res == "error: IO failed":
@@ -107,9 +127,21 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
 
         curr_file = open(f"tmp/chunk_{chunk_num}.m4s", "wb")
         data = receive_data(clientSocket)
+
+        tfin = time.time() # end of request
+
         curr_file.write(data)
         chunks_queue.put(f"tmp/chunk_{chunk_num}.m4s")
         chunk_num += 1
+        tcurr = update_tput(tcurr, alpha, len(data), tstart, tfin) # len(data) is the chunk size
+        bitrate = update_bitrate(tcurr, bitrates)
+        # tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
+        # maxbitrate = tbitrate / 1.5 # throughput >= 1.5 * bitrate
+        # for i in range(len(bitrates)):
+        #     if maxbitrate >= bitrates[i]: 
+        #         bitrate = bitrates[i]
+        #     else:
+        #         break
 
     print("Client session termiated.")
     clientSocket.close()
@@ -128,4 +160,4 @@ if __name__ == '__main__':
     client_thread = threading.Thread(target = client, args =(server_addr, server_port, video_name, alpha, chunks_queue))
     client_thread.start()
     # start the video player
-    play_chunks(chunks_queue)
+    # play_chunks(chunks_queue)
