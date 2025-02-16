@@ -48,23 +48,56 @@ def recieve_data(clientSocket):
         mpd_data += chunk
     return mpd_data
 
+def parse_bitrates(clientSocket, mpd_text):
+    root = ET.fromstring(mpd_text)
+    bitrates = [int(rep.get("bandwidth")) for rep in root.findall(".//Representation")]
+    for b in bitrates: print(b)
+    return bitrates
+
+
+
 def client(server_addr, server_port, video_name, alpha, chunks_queue):
     # setup socket and files
     clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     clientSocket.connect((server_addr, server_port))
+
+    if not check_video(clientSocket, video_name): return False # video doesn't exist
+
+    clientSocket.send("SUCCESS".encode()) # Acknowledged recieved
+
+    mpd_text = recieve_data(clientSocket).decode() # mpd file
+    print(mpd_text) 
+    bitrates = parse_bitrates(clientSocket, mpd_text)
+    bitrates.sort() #lowest to highest bitrate sorted
+
+
     if not os.path.exists("tmp"):
         os.makedirs("tmp")
 
-    if not check_video(clientSocket, video_name): return False # video doesn't exist
-    
-    # Acknowledged recieved
-    clientSocket.send("SUCCESS".encode())
-    
-    mpd_text = recieve_data(clientSocket).decode() # mpd file
-    print(mpd_text) 
-    
+    chunk_no = 0
+    bitrate = bitrates[0] #temporary
+    while (True): #loop of .m4s files
+        # chunk_name = video_name + "_" + bitrate + "_" + chunk_no
+        # clientSocket.send(chunk_name.encode())
+        # res = clientSocket.recv(64).decode()
+        # print(res + '\n')
+        # if res == "error: not found" or res == "error: IO failed":
+        #     clientSocket.close() #DC from server if not found
+        #     return False #close if it doesn't exist
+        # return True
 
-    # print(mpd_file) #can it actually print??
+        curr_file = open(f"tmp/chunk_{chunk_no}.m4s", "wb"):
+        while (True): #loop of a single .m4s file
+
+            chunk = clientSocket.recv(1024)
+            if not chunk: #finished receiving data
+                break
+            curr_file.write(chunk)
+            break
+
+        chunks_queue.put(f"tmp/chunk_{chunk_no}.m4s")
+        chunk_no += 1
+        break
 
     clientSocket.close()
     return
