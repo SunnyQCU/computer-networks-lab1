@@ -27,17 +27,6 @@ import xml.etree.ElementTree as ET #ok according to assignment
     chunks_queue -- the queue for passing the path of the chunks to the video player
 
 """
-
-# def check_video(clientSocket, video_name):
-#     clientSocket.send(video_name.encode())
-#     mpd_file_res = clientSocket.recv(64).decode()
-#     print(mpd_file_res + '\n')
-#     if mpd_file_res == "error: file not found" or mpd_file_res == "error: IO failed":
-#         clientSocket.close() #DC from server if not found
-#         return False #close if it doesn't exist
-#     return True
-
-
     
 def receive_data(clientSocket): #protocol
     #first get file size
@@ -48,17 +37,19 @@ def receive_data(clientSocket): #protocol
         chunk = clientSocket.recv(4096)
         data += chunk
         bytes_read += 4096
-    return data.decode()
+    try: # string or byte file
+        data = data.decode()
+    except UnicodeDecodeError:
+        pass
+    return data
 
 def send_req(clientSocket, req):
-    # send request size
     byte_size = len(req.encode())
     print(f"Size in bytes: {byte_size}")
     req_size_bytes = str(byte_size).zfill(10)
-    clientSocket.send(req_size_bytes.encode())
+    clientSocket.send(req_size_bytes.encode()) # send request size
 
-    # send request
-    clientSocket.send(req.encode())
+    clientSocket.send(req.encode()) # send request
     return
 
 def check_video(clientSocket, video_name):
@@ -66,21 +57,10 @@ def check_video(clientSocket, video_name):
     mpd_file_res = receive_data(clientSocket)
     #error checking below
     print(mpd_file_res + '\n')
-    if mpd_file_res == "error: file not found" or mpd_file_res == "error: IO failed":
+    if mpd_file_res == "error: file not found":
         clientSocket.close() #DC from server if not found
         return False #close if it doesn't exist
     return True
-
-# def recieve_data(clientSocket):
-#     # Actually recieve and print mpd file
-#     mpd_data = b""
-#     while (True): #keep on collecting data till there's none left
-#         chunk = clientSocket.recv(4096)
-#         if not chunk: #finished receiving data
-#             print("Done receiving\n")
-#             break
-#         mpd_data += chunk
-#     return mpd_data
 
 def parse_bitrates(clientSocket, mpd_text):
     root = ET.fromstring(mpd_text)
@@ -98,9 +78,7 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         print("No video.")
         return False # video doesn't exist
 
-    # clientSocket.send("SUCCESS".encode()) # Acknowledged recieved
-
-    mpd_text = receive_data(clientSocket)# from connectionSocket.sendall(mpd_data)
+    mpd_text = receive_data(clientSocket) # from connectionSocket.sendall(mpd_data)
     print(mpd_text) 
 
     bitrates = parse_bitrates(clientSocket, mpd_text)
@@ -115,9 +93,6 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         chunk_name = video_name + "_" + str(bitrate) + "_" + str(chunk_num).zfill(5)
         print(chunk_name)
         send_req(clientSocket, chunk_name)
-        # clientSocket.send(chunk_name.encode())
-        # res = clientSocket.recv(64).decode()
-        # print(res + '\n')
         res = receive_data(clientSocket)
         if res == "error: file not found" or res == "error: IO failed":
             clientSocket.close() #DC from server if not found
@@ -125,31 +100,13 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
 
         curr_file = open(f"tmp/chunk_{chunk_num}.m4s", "wb")
         data = receive_data(clientSocket)
-        curr_file.write(data.encode())
-        # while (True): #loop of a single .m4s file
-        #     chunk = clientSocket.recv(4096)
-        #     if not chunk: #finished receiving data
-        #         break
-        #     curr_file.write(chunk)
+        curr_file.write(data)
         chunks_queue.put(f"tmp/chunk_{chunk_num}.m4s")
         chunk_num += 1
-    
 
+    print("Client session termiated.")
     clientSocket.close()
     return
-
-
-    """
-    chunk_num = 0
-    while (True): #keep on collecting data till there's none left
-        chunk = clientSocket.recv(1024)
-        if not chunk: #finished receiving data
-            break
-        with open(f"tmp/chunk_{chunk_num}.m4s", "wb") as f:
-            f.write(chunk)
-        chunks_queue.put(f"tmp/chunk_{chunk_num}.m4s")
-        chunk_num += 1
-    """
 
 """
     to visualize the adaptive video streaming, store the chunk in a temporary folder and
@@ -179,3 +136,13 @@ if __name__ == '__main__':
     client_thread.start()
     # start the video player
     # play_chunks(chunks_queue) //only needed for video playing
+
+
+# def check_video(clientSocket, video_name):
+#     clientSocket.send(video_name.encode())
+#     mpd_file_res = clientSocket.recv(64).decode()
+#     print(mpd_file_res + '\n')
+#     if mpd_file_res == "error: file not found" or mpd_file_res == "error: IO failed":
+#         clientSocket.close() #DC from server if not found
+#         return False #close if it doesn't exist
+#     return True

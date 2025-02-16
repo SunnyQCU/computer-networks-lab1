@@ -4,7 +4,26 @@
 
 *Please replace this text with information on how to run your code, description of each file in the directory, and any assumptions you have made for your code*
 
-I believe we only edit client and serer, network and video_player should not be touched
+TODO NEXT TIME:
+    CLIENT: Implement ABR algorithm
+        make function to calculate throughput
+        choose bitrate to be the highest one that is still less than throughput
+    
+    CLIENT: Create log.txt file 
+        Format: <time> <duration> <tput> <avg-tput> <bitrate> <chunkname>
+
+    
+
+client.py:
+    Currently successfully requests all 30 files and fill them
+    into the tmp folder as requested. Also invalid video requests
+    closes gracefully.
+
+server.py:
+    Currently successfully sends all 30 files to client as requested.
+    Also invalid video requests closes gracefully.
+
+I believe we only edit client and server, network and video_player should not be touched
 
 To start server:
 python3 server.py <listen_port>
