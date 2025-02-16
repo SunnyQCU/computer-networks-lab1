@@ -30,60 +30,46 @@ FSIZE_BYTES = 128
 
 """
     
-def send_req(clientSocket, req): #ONLY FOR STRING REQUESTS
-    req_encoded = req.encode('utf-8')
-    byte_size = len(req_encoded)
+def receive_data(clientSocket): #protocol
+    #first get file size
+    # file_size_raw = b""
+    # bytes_read = 0
+    # while (bytes_read < FSIZE_BYTES):
+    #     chunk = clientSocket.recv(1)
+    #     file_size_raw += chunk
+    #     bytes_read += len(chunk)
+    file_size_raw = clientSocket.recv(FSIZE_BYTES)
+    print(f"Raw received bytes: {file_size_raw}")
+    file_size = int(file_size_raw.decode('utf-8')) # file_size always 10 bytes
+    bytes_read = 0
+    data = b""
+    while (bytes_read < file_size):
+        chunk = clientSocket.recv(4096)
+        data += chunk
+        bytes_read += len(chunk)
+    try: # string or byte file
+        return data.decode('utf-8')
+    except UnicodeDecodeError:
+        return data
 
-    req_size_bytes = (str(byte_size).zfill(FSIZE_BYTES)).encode() #b"00000080"
+def send_req(clientSocket, req):
+    byte_size = len(req.encode('utf-8'))
+    print(f"Size in bytes: {byte_size}")
+    req_size_bytes = (str(byte_size).zfill(FSIZE_BYTES)).encode()
     clientSocket.sendall(req_size_bytes) # send request size
 
     clientSocket.sendall(req.encode('utf-8')) # send request
     return
 
-def receive_msg(clientSocket): #protocol
-
-    bytes_read = 0
-    file_size_raw = b""
-    while (bytes_read < FSIZE_BYTES):
-        chunk = clientSocket.recv(FSIZE_BYTES - len(file_size_raw)) #only get remaing
-        file_size_raw += chunk
-        bytes_read += len(chunk)
-
-    # file_size_raw = clientSocket.recv(FSIZE_BYTES)
-    print(f"Raw received bytes: {file_size_raw}")
-    file_size = int(file_size_raw.decode('utf-8'))
-
-    send_req(clientSocket, "CONFIRMED")
-
-    bytes_read = 0
-    data = b""
-    while (bytes_read < file_size):
-        chunk = clientSocket.recv(file_size - len(data)) #only get remaing
-        data += chunk
-        bytes_read += len(chunk)
-
-    return data.decode('utf-8')
-
-def receive_data(clientSocket): #protocol
-    # file_size_raw = clientSocket.recv(FSIZE_BYTES)
-    bytes_read = 0
-    file_size_raw = b""
-    while (bytes_read < FSIZE_BYTES):
-        chunk = clientSocket.recv(FSIZE_BYTES - len(file_size_raw)) #only get remaing
-        file_size_raw += chunk
-        bytes_read += len(chunk)
-
-    print(f"DATA Raw received bytes: {file_size_raw}")
-    file_size = int(file_size_raw.decode('utf-8'))
-
-    bytes_read = 0
-    data = b""
-    while (bytes_read < file_size):
-        chunk = clientSocket.recv(file_size - len(data)) #only get remaing
-        data += chunk
-        bytes_read += len(chunk)
-
-    return data
+def check_video(clientSocket, video_name):
+    send_req(clientSocket, video_name)
+    mpd_file_res = receive_data(clientSocket)
+    #error checking below
+    print(mpd_file_res + '\n')
+    if mpd_file_res == "error: file not found":
+        clientSocket.close() #DC from server if not found
+        return False #close if it doesn't exist
+    return True
 
 def parse_bitrates(clientSocket, mpd_text):
     root = ET.fromstring(mpd_text)
@@ -97,17 +83,12 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     clientSocket.connect((server_addr, server_port))
 
-    # check video existance
-    send_req(clientSocket, video_name)
-    mpd_file_res = receive_msg(clientSocket)
-    print(mpd_file_res + '\n') #error checking below
-    if mpd_file_res == "error: file not found":
-        clientSocket.close() #DC from server if not found
-        return
-    print(mpd_file_res)
+    if not check_video(clientSocket, video_name): 
+        print("No video.")
+        return False # video doesn't exist
 
     mpd_text = receive_data(clientSocket) # from connectionSocket.sendall(mpd_data)
-    print(mpd_text.decode())  
+    print(mpd_text) 
 
     bitrates = parse_bitrates(clientSocket, mpd_text)
     bitrates.sort() #lowest to highest bitrate sorted
@@ -117,20 +98,18 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
 
     chunk_num = 0
     bitrate = bitrates[0] #temporary lowest bitrate
-
-
-
-
     while (True): #loop of .m4s files
         chunk_name = video_name + "_" + str(bitrate) + "_" + str(chunk_num).zfill(5)
         print(chunk_name)
         send_req(clientSocket, chunk_name)
-        res = receive_msg(clientSocket)
+        res = receive_data(clientSocket)
         if res == "error: file not found" or res == "error: IO failed":
+            clientSocket.recv(4096)
             clientSocket.close() #DC from server if not found
             break #last file
 
         curr_file = open(f"tmp/chunk_{chunk_num}.m4s", "wb")
+        print("video_file size")
         data = receive_data(clientSocket)
         curr_file.write(data)
         chunks_queue.put(f"tmp/chunk_{chunk_num}.m4s")
@@ -139,6 +118,20 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     print("Client session termiated.")
     clientSocket.close()
     return
+
+"""
+    to visualize the adaptive video streaming, store the chunk in a temporary folder and
+    pass the path of the chunk to the video player
+    
+    create temporary directory if not exist
+    if not os.path.exists("tmp"):
+        os.makedirs("tmp")
+    # write chunk to the temporary directory
+    with open(f"tmp/chunk_0.m4s", "wb") as f:
+        f.write(chunk)
+    # put the path of the chunk to the queue
+    chunks_queue.put(f"tmp/chunk_0.m4s")
+"""
 
 # parse input arguments and pass to the client function
 if __name__ == '__main__':
@@ -154,3 +147,13 @@ if __name__ == '__main__':
     client_thread.start()
     # start the video player
     # play_chunks(chunks_queue) //only needed for video playing
+
+
+# def check_video(clientSocket, video_name):
+#     clientSocket.send(video_name.encode())
+#     mpd_file_res = clientSocket.recv(64).decode()
+#     print(mpd_file_res + '\n')
+#     if mpd_file_res == "error: file not found" or mpd_file_res == "error: IO failed":
+#         clientSocket.close() #DC from server if not found
+#         return False #close if it doesn't exist
+#     return True
