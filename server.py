@@ -7,10 +7,20 @@
 #
 import socket
 import os
+import sys
 
 FSIZE_BYTES = 128
 
-def open_file(path, connectionSocket):
+def recv_exactly(connectionSocket, size):
+    bytes_read = 0
+    data = b""
+    while (bytes_read < size):
+        chunk = connectionSocket.recv(size - len(data)) #only get remaing
+        data += chunk
+        bytes_read += len(chunk)
+    return data
+
+def open_file(connectionSocket, path):
     if not os.path.exists(path):
         send_msg(connectionSocket, "error: file not found")
         connectionSocket.close() # DC from client if fail
@@ -21,30 +31,9 @@ def open_file(path, connectionSocket):
     return file
 
 def receive_req(connectionSocket): #protocol
-    #first get file size
-    # file_size_raw = connectionSocket.recv(FSIZE_BYTES)
-    bytes_read = 0
-    file_size_raw = b""
-    while (bytes_read < FSIZE_BYTES):
-        chunk = connectionSocket.recv(FSIZE_BYTES - len(file_size_raw)) #only get remaing
-        file_size_raw += chunk
-        bytes_read += len(chunk)
-
+    file_size_raw = recv_exactly(connectionSocket, FSIZE_BYTES)
     file_size = int(file_size_raw.decode('utf-8')); # file_size always 10 bytes
-
-    bytes_read = 0
-    data = b""
-    while (bytes_read < file_size):
-        chunk = connectionSocket.recv(file_size - len(data)) #only get remaing
-        data += chunk
-        bytes_read += len(chunk)
-
-    # bytes_read = 0
-    # data = b""
-    # while (bytes_read < file_size):
-    #     chunk = connectionSocket.recv(4096)
-    #     data += chunk
-    #     bytes_read += len(chunk)
+    data = recv_exactly(connectionSocket, file_size)
     return data.decode('utf-8')
 
 def send_file(connectionSocket, file):
@@ -56,8 +45,6 @@ def send_file(connectionSocket, file):
     req_size_bytes = (str(byte_size).zfill(FSIZE_BYTES)).encode('utf-8')
     print(f"SERVER Byte size: {req_size_bytes}")
     connectionSocket.sendall(req_size_bytes)
-
-    res = receive_req(connectionSocket) #return confirmation
     
     connectionSocket.sendall(data)
     return
@@ -75,59 +62,46 @@ def send_msg(connectionSocket, msg):
 
 #start here
 
-serverPort = 50000
-serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-serverSocket.bind(("", serverPort))
-serverSocket.listen(1)
-print("Server is ready to recieve connections")
+def server(serverPort):
+    serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serverSocket.bind(("", serverPort))
+    serverSocket.listen(1)
+    print("Server is ready to recieve connections")
 
-while True:
-    # recieve manifest file request
-    connectionSocket, clientAddr = serverSocket.accept()
-    video_name = receive_req(connectionSocket)
-    # video_name = connectionSocket.recv(1024).decode()
-    mpd_path = "./data/" + video_name + "/manifest.mpd" # manifest file
+    while True:
+        # recieve manifest file request
+        connectionSocket, clientAddr = serverSocket.accept()
+        video_name = receive_req(connectionSocket)
+        mpd_path = "./data/" + video_name + "/manifest.mpd" # manifest file
+        mpd_file = open_file(connectionSocket, mpd_path)
 
-    if not os.path.exists(mpd_path):
-        send_msg(connectionSocket, "error: file not found")
-        print("error: open file failed")
-        connectionSocket.close() # DC from client if fail
-        continue
-    send_msg(connectionSocket, "success: file exist")
-    mpd_file = open(mpd_path, "rb")
+        if not mpd_file: 
+            continue
 
-    if not mpd_file: 
-        continue
+        send_file(connectionSocket, mpd_file)
+        print("mpd sent")
+        # connectionSocket.sendall(mpd_data) #to mpd_text = recieve_Data(clientSocket).decode()
+        mpd_file.close() # done with MPD file
 
-    send_file(connectionSocket, mpd_file)
-    print("mpd sent")
-    # connectionSocket.sendall(mpd_data) #to mpd_text = recieve_Data(clientSocket).decode()
-    mpd_file.close() # done with MPD file
-
-    print("before while loop")
-    while (True):
-        vchunk_name = receive_req(connectionSocket) #recieve chunk_name
-        vchunk_path = "./data/" + video_name + "/chunks/" + vchunk_name + ".m4s"
-        print(vchunk_path)
-
-        if not os.path.exists(vchunk_path):
-            send_msg(connectionSocket, "error: file not found")
-            connectionSocket.close() # DC from client if fail
-            print("error: open file failed")
-            break
-        send_msg(connectionSocket, "success: file exist")
-        vchunk_file = open(vchunk_path, "rb")
-
-        if not vchunk_file: 
+        print("before while loop")
+        while (True):
+            vchunk_name = receive_req(connectionSocket) #recieve chunk_name
+            vchunk_path = "./data/" + video_name + "/chunks/" + vchunk_name + ".m4s"
+            print(vchunk_path)
+            vchunk_file = open_file(connectionSocket, vchunk_path)
+            if not vchunk_file: 
+                break # open_file automatically closes client
+            send_file(connectionSocket, vchunk_file) #send the video
             vchunk_file.close() # done with MPD file
-            break # open_file automatically closes client
-        send_file(connectionSocket, vchunk_file) #send the video
-        vchunk_file.close() # done with MPD file
 
-    print("Server disconnected.")
-    connectionSocket.close()
+        print("Server disconnected.")
+        connectionSocket.close()
 
 
+# parse input arguments and pass to the client function
+if __name__ == '__main__':
+    listen_port = int(sys.argv[1])
+    server(listen_port)
 
 """ Old open_file function with try except
 def open_file(request, connectionSocket):

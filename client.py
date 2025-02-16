@@ -7,7 +7,7 @@
 
 import threading
 from queue import Queue
-# from video_player import play_chunks #only needed for video laying
+from video_player import play_chunks #only needed for video laying
 import sys
 
 # added myself
@@ -30,6 +30,15 @@ FSIZE_BYTES = 128
 
 """
     
+def recv_exactly(clientSocket, size):
+    bytes_read = 0
+    data = b""
+    while (bytes_read < size):
+        chunk = clientSocket.recv(size - len(data)) #only get remaing
+        data += chunk
+        bytes_read += len(chunk)
+    return data
+
 def send_req(clientSocket, req): #ONLY FOR STRING REQUESTS
     req_encoded = req.encode('utf-8')
     byte_size = len(req_encoded)
@@ -41,51 +50,20 @@ def send_req(clientSocket, req): #ONLY FOR STRING REQUESTS
     return
 
 def receive_msg(clientSocket): #protocol
-
-    bytes_read = 0
-    file_size_raw = b""
-    while (bytes_read < FSIZE_BYTES):
-        chunk = clientSocket.recv(FSIZE_BYTES - len(file_size_raw)) #only get remaing
-        file_size_raw += chunk
-        bytes_read += len(chunk)
-
-    # file_size_raw = clientSocket.recv(FSIZE_BYTES)
+    file_size_raw = recv_exactly(clientSocket, FSIZE_BYTES)
     print(f"Raw received bytes: {file_size_raw}")
     file_size = int(file_size_raw.decode('utf-8'))
-
-    send_req(clientSocket, "CONFIRMED")
-
-    bytes_read = 0
-    data = b""
-    while (bytes_read < file_size):
-        chunk = clientSocket.recv(file_size - len(data)) #only get remaing
-        data += chunk
-        bytes_read += len(chunk)
-
+    data = recv_exactly(clientSocket, file_size)
     return data.decode('utf-8')
 
 def receive_data(clientSocket): #protocol
-    # file_size_raw = clientSocket.recv(FSIZE_BYTES)
-    bytes_read = 0
-    file_size_raw = b""
-    while (bytes_read < FSIZE_BYTES):
-        chunk = clientSocket.recv(FSIZE_BYTES - len(file_size_raw)) #only get remaing
-        file_size_raw += chunk
-        bytes_read += len(chunk)
-
+    file_size_raw = recv_exactly(clientSocket, FSIZE_BYTES)
     print(f"DATA Raw received bytes: {file_size_raw}")
     file_size = int(file_size_raw.decode('utf-8'))
-
-    bytes_read = 0
-    data = b""
-    while (bytes_read < file_size):
-        chunk = clientSocket.recv(file_size - len(data)) #only get remaing
-        data += chunk
-        bytes_read += len(chunk)
-
+    data = recv_exactly(clientSocket, file_size)
     return data
 
-def parse_bitrates(clientSocket, mpd_text):
+def parse_bitrates(mpd_text):
     root = ET.fromstring(mpd_text)
     bitrates = [int(rep.get("bandwidth")) for rep in root.findall(".//Representation")]
     for b in bitrates: 
@@ -109,7 +87,7 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     mpd_text = receive_data(clientSocket) # from connectionSocket.sendall(mpd_data)
     print(mpd_text.decode())  
 
-    bitrates = parse_bitrates(clientSocket, mpd_text)
+    bitrates = parse_bitrates(mpd_text)
     bitrates.sort() #lowest to highest bitrate sorted
 
     if not os.path.exists("tmp"):
@@ -117,9 +95,6 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
 
     chunk_num = 0
     bitrate = bitrates[0] #temporary lowest bitrate
-
-
-
 
     while (True): #loop of .m4s files
         chunk_name = video_name + "_" + str(bitrate) + "_" + str(chunk_num).zfill(5)
@@ -153,4 +128,4 @@ if __name__ == '__main__':
     client_thread = threading.Thread(target = client, args =(server_addr, server_port, video_name, alpha, chunks_queue))
     client_thread.start()
     # start the video player
-    # play_chunks(chunks_queue) //only needed for video playing
+    play_chunks(chunks_queue)
