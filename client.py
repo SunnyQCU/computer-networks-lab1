@@ -71,32 +71,47 @@ def parse_bitrates(mpd_text):
         print(b)
     return bitrates
 
-def update_tput(tcurr, alpha, chunk_size, tstart, tfin): # len(data) is the chunk size
-    tnew = chunk_size / (tfin - tstart)
+def calc_tnew(chunk_size, tstart, tfin):
+    return (chunk_size * 8) / (tfin - tstart) # bits/second
+
+def update_tcurr(tcurr, alpha, tnew): # len(data) is the chunk size
     return alpha * tnew + (1 - alpha) * tcurr
 
 def update_bitrate(tcurr, bitrates):
+    # tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
+    maxbitrate = tcurr / 1.5 # throughput >= 1.5 * bitrate
     bitrate = bitrates[0] # default lowest bitrate
-    tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
-    maxbitrate = tbitrate / 1.5 # throughput >= 1.5 * bitrate
-    for i in range(len(bitrates)): # cycle to highest bitrate
-        if maxbitrate >= bitrates[i]: bitrate = bitrates[i]
-        else: break
+    i = 0
+    while(i < len(bitrates) and maxbitrate >= bitrates[i]):
+        bitrate = bitrates[i]
+        i += 1
     return bitrate
 
+def log_entry(tconnect, tstart, tfin, tput, tavg, bitrate, chunk_name):
+    chunk_name = chunk_name + ".m4s"
+    duration = tfin - tstart
+    log_entry = f"{tconnect} {duration} {tput} {tavg} {bitrate} {chunk_name}\n"
+    log = open("log.txt", "a") #opens for writing
+    log.write(log_entry)
+    log.close()
+    return
+
 def client(server_addr, server_port, video_name, alpha, chunks_queue):
+    tnet_start = time.time()
     # setup socket and files
     clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     clientSocket.connect((server_addr, server_port))
+    if os.path.exists("log.txt"): #clear prev log file
+        os.remove("log.txt")
 
     # check video existance
     send_req(clientSocket, video_name)
     mpd_file_res = receive_msg(clientSocket)
-    print(mpd_file_res + '\n') #error checking below
+    # print(mpd_file_res + '\n') #error checking below
     if mpd_file_res == "error: file not found":
         clientSocket.close() #DC from server if not found
         return
-    print(mpd_file_res)
+    # print(mpd_file_res)
 
     mpd_text = receive_data(clientSocket) # from connectionSocket.sendall(mpd_data)
     print(mpd_text.decode())  
@@ -133,15 +148,13 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         curr_file.write(data)
         chunks_queue.put(f"tmp/chunk_{chunk_num}.m4s")
         chunk_num += 1
-        tcurr = update_tput(tcurr, alpha, len(data), tstart, tfin) # len(data) is the chunk size
+        
+        tnew = calc_tnew(len(data), tstart, tfin)
+        tcurr = update_tcurr(tcurr, alpha, tnew) # len(data) is the chunk size
+        log_entry(time.time() - tnet_start, tstart, tfin, tnew, tcurr, bitrate, chunk_name)
+
         bitrate = update_bitrate(tcurr, bitrates)
-        # tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
-        # maxbitrate = tbitrate / 1.5 # throughput >= 1.5 * bitrate
-        # for i in range(len(bitrates)):
-        #     if maxbitrate >= bitrates[i]: 
-        #         bitrate = bitrates[i]
-        #     else:
-        #         break
+        
 
     print("Client session termiated.")
     clientSocket.close()
@@ -161,3 +174,12 @@ if __name__ == '__main__':
     client_thread.start()
     # start the video player
     # play_chunks(chunks_queue)
+
+
+# tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
+        # maxbitrate = tbitrate / 1.5 # throughput >= 1.5 * bitrate
+        # for i in range(len(bitrates)):
+        #     if maxbitrate >= bitrates[i]: 
+        #         bitrate = bitrates[i]
+        #     else:
+        #         break
