@@ -79,11 +79,8 @@ def server(serverPort):
             continue
 
         send_file(connectionSocket, mpd_file)
-        print("mpd sent")
-        # connectionSocket.sendall(mpd_data) #to mpd_text = recieve_Data(clientSocket).decode()
         mpd_file.close() # done with MPD file
 
-        print("before while loop")
         while (True):
             vchunk_name = receive_req(connectionSocket) #recieve chunk_name
             vchunk_path = "./data/" + video_name + "/chunks/" + vchunk_name + ".m4s"
@@ -94,8 +91,8 @@ def server(serverPort):
             send_file(connectionSocket, vchunk_file) #send the video
             vchunk_file.close() # done with MPD file
 
-        print("Server disconnected.")
         connectionSocket.close()
+        print("Server disconnected.")
 
 
 # parse input arguments and pass to the client function

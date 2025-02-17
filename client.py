@@ -7,7 +7,7 @@
 
 import threading
 from queue import Queue
-# from video_player import play_chunks #only needed for video laying
+from video_player import play_chunks #only needed for video laying
 import sys
 
 # added myself
@@ -107,7 +107,6 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     # check video existance
     send_req(clientSocket, video_name)
     mpd_file_res = receive_msg(clientSocket)
-    # print(mpd_file_res + '\n') #error checking below
     if mpd_file_res == "error: file not found":
         clientSocket.close() #DC from server if not found
         return
@@ -154,10 +153,9 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         log_entry(time.time() - tnet_start, tstart, tfin, tnew, tcurr, bitrate, chunk_name)
 
         bitrate = update_bitrate(tcurr, bitrates)
-        
 
-    print("Client session termiated.")
     clientSocket.close()
+    print("Client session termiated.")
     return
 
 # parse input arguments and pass to the client function
@@ -173,13 +171,4 @@ if __name__ == '__main__':
     client_thread = threading.Thread(target = client, args =(server_addr, server_port, video_name, alpha, chunks_queue))
     client_thread.start()
     # start the video player
-    # play_chunks(chunks_queue)
-
-
-# tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
-        # maxbitrate = tbitrate / 1.5 # throughput >= 1.5 * bitrate
-        # for i in range(len(bitrates)):
-        #     if maxbitrate >= bitrates[i]: 
-        #         bitrate = bitrates[i]
-        #     else:
-        #         break
+    play_chunks(chunks_queue)

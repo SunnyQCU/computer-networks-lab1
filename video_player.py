@@ -35,7 +35,7 @@ def play_chunks(chunks_queue):
             ret, frame = cap.read()
             if not ret:
                 break
-            frame = rescale_frame(frame, 1080/frame.shape[0])
+            frame = rescale_frame(frame, 1080/frame.shape[0]*0.2)
             cv2.imshow('Video Player: Press q to quit',frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 quit = True
