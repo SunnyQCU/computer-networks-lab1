@@ -7,16 +7,16 @@
 
 import threading
 from queue import Queue
-from video_player import play_chunks #only needed for video laying
+# from video_player import play_chunks #only needed for video playing
 import sys
 
-# added myself
+# Below imports are ones I added myself
 import socket
 import os
-import xml.etree.ElementTree as ET #ok according to assignment
-import time # for timing chunk requests
+import xml.etree.ElementTree as ET
+import time
 
-FSIZE_BYTES = 128
+FSIZE_BYTES = 32
 
 """
     the client function
@@ -32,6 +32,13 @@ FSIZE_BYTES = 128
 """
     
 def recv_exactly(clientSocket, size):
+    """ Ensures recv downloads exact number of bytes. 
+        No more, no less.
+    
+    Keyword arguments:
+    clientSocket -- the client's socket
+    size -- number of bytes to recieve
+    """
     bytes_read = 0
     data = b""
     while (bytes_read < size):
@@ -41,6 +48,12 @@ def recv_exactly(clientSocket, size):
     return data
 
 def send_req(clientSocket, req): #ONLY FOR STRING REQUESTS
+    """ Send string to server
+
+    Keyword arguments:
+    clientSocket -- the client's socket
+    req -- string to send
+    """
     req_encoded = req.encode('utf-8')
     byte_size = len(req_encoded)
 
@@ -51,6 +64,11 @@ def send_req(clientSocket, req): #ONLY FOR STRING REQUESTS
     return
 
 def receive_msg(clientSocket): #protocol
+    """ Processes and returns received string from server
+
+    Keyword arguments:
+    clientSocket -- the client's socket
+    """
     file_size_raw = recv_exactly(clientSocket, FSIZE_BYTES)
     print(f"Raw received bytes: {file_size_raw}")
     file_size = int(file_size_raw.decode('utf-8'))
@@ -58,6 +76,11 @@ def receive_msg(clientSocket): #protocol
     return data.decode('utf-8')
 
 def receive_data(clientSocket): #protocol
+    """ Processes and returns recieved file data from server
+
+    Keyword arguments:
+    clientSocket -- the client's socket
+    """
     file_size_raw = recv_exactly(clientSocket, FSIZE_BYTES)
     print(f"DATA Raw received bytes: {file_size_raw}")
     file_size = int(file_size_raw.decode('utf-8'))
@@ -65,20 +88,46 @@ def receive_data(clientSocket): #protocol
     return data
 
 def parse_bitrates(mpd_text):
+    """ Parses mpd_file for bitrates and put them into a sorted array
+
+    Keyword arguments:
+    mpd_text -- the mpd_file in string format
+    """
     root = ET.fromstring(mpd_text)
     bitrates = [int(rep.get("bandwidth")) for rep in root.findall(".//Representation")]
     for b in bitrates: 
         print(b)
+    bitrates.sort()
     return bitrates
 
 def calc_tnew(chunk_size, tstart, tfin):
+    """ Calculates the throughput for the new chunk
+
+    Keyword arguments:
+    chunk_size -- size of chunk in bytes
+    tstart -- chunk request time
+    tfin -- chunk download finish time
+    """
     return (chunk_size * 8) / (tfin - tstart) # bits/second
 
 def update_tcurr(tcurr, alpha, tnew): # len(data) is the chunk size
+    """ Updates the current throughput
+
+    tcurr -- current throughput from one chunk before
+    alpha -- constant provided in argument line (between 0 and 1)
+    tnew -- throughput for the new chunk
+    """
     return alpha * tnew + (1 - alpha) * tcurr
 
 def update_bitrate(tcurr, bitrates):
-    # tbitrate = tcurr * 8 # convert throughput(bytes) to bitrate(bits)
+    """ Determines bitrate to request for next chunk.
+        Requests the bitrate that is less or equal to
+        throughput / 1.5 so avg throughput is at least 1.5
+        times bitrate.
+
+    tcurr -- current throughput (new throughput included)
+    bitrates -- array of sorted bitrates
+    """
     maxbitrate = tcurr / 1.5 # throughput >= 1.5 * bitrate
     bitrate = bitrates[0] # default lowest bitrate
     i = 0
@@ -88,6 +137,16 @@ def update_bitrate(tcurr, bitrates):
     return bitrate
 
 def log_entry(tconnect, tstart, tfin, tput, tavg, bitrate, chunk_name):
+    """ Writes the calculations of the current chunk to the log.txt file
+
+    tconnect: Time since connecting to network
+    tstart: chunk request time
+    tfin: chunk download finish time
+    tput: The tnew for the current chunk
+    tavg: The tcurr including the current chunk
+    bitrate: bitrate requested from the server
+    chunk_name: name of the chunk requested from the server
+    """
     chunk_name = chunk_name + ".m4s"
     duration = tfin - tstart
     log_entry = f"{tconnect} {duration} {tput} {tavg} {bitrate} {chunk_name}\n"
@@ -97,26 +156,23 @@ def log_entry(tconnect, tstart, tfin, tput, tavg, bitrate, chunk_name):
     return
 
 def client(server_addr, server_port, video_name, alpha, chunks_queue):
-    tnet_start = time.time()
-    # setup socket and files
     clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     clientSocket.connect((server_addr, server_port))
-    if os.path.exists("log.txt"): #clear prev log file
+    tnet_start = time.time()
+    if os.path.exists("log.txt"):
         os.remove("log.txt")
 
     # check video existance
     send_req(clientSocket, video_name)
     mpd_file_res = receive_msg(clientSocket)
     if mpd_file_res == "error: file not found":
-        clientSocket.close() #DC from server if not found
+        clientSocket.close()
         return
-    # print(mpd_file_res)
 
     mpd_text = receive_data(clientSocket) # from connectionSocket.sendall(mpd_data)
     print(mpd_text.decode())  
 
     bitrates = parse_bitrates(mpd_text)
-    bitrates.sort() #lowest to highest bitrate sorted
 
     if not os.path.exists("tmp"):
         os.makedirs("tmp")
@@ -127,7 +183,6 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     tcurr = 0 # starting throughput should be 0
 
     while (True): #loop of .m4s files
-        print(f"Tcurr: {tcurr}, bitrate: {bitrate}")
         chunk_name = video_name + "_" + str(bitrate) + "_" + str(chunk_num).zfill(5)
         print(chunk_name)
 
@@ -152,6 +207,8 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
         tcurr = update_tcurr(tcurr, alpha, tnew) # len(data) is the chunk size
         log_entry(time.time() - tnet_start, tstart, tfin, tnew, tcurr, bitrate, chunk_name)
 
+        print(f"Tcurr: {tnew}, bitrate: {bitrate}")
+
         bitrate = update_bitrate(tcurr, bitrates)
 
     clientSocket.close()
@@ -171,4 +228,4 @@ if __name__ == '__main__':
     client_thread = threading.Thread(target = client, args =(server_addr, server_port, video_name, alpha, chunks_queue))
     client_thread.start()
     # start the video player
-    play_chunks(chunks_queue)
+    # play_chunks(chunks_queue)
