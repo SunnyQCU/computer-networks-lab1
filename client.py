@@ -70,7 +70,6 @@ def receive_msg(clientSocket): #protocol
     clientSocket -- the client's socket
     """
     file_size_raw = recv_exactly(clientSocket, FSIZE_BYTES)
-    print(f"Raw received bytes: {file_size_raw}")
     file_size = int(file_size_raw.decode('utf-8'))
     data = recv_exactly(clientSocket, file_size)
     return data.decode('utf-8')
@@ -82,7 +81,6 @@ def receive_data(clientSocket): #protocol
     clientSocket -- the client's socket
     """
     file_size_raw = recv_exactly(clientSocket, FSIZE_BYTES)
-    print(f"DATA Raw received bytes: {file_size_raw}")
     file_size = int(file_size_raw.decode('utf-8'))
     data = recv_exactly(clientSocket, file_size)
     return data
@@ -95,8 +93,6 @@ def parse_bitrates(mpd_text):
     """
     root = ET.fromstring(mpd_text)
     bitrates = [int(rep.get("bandwidth")) for rep in root.findall(".//Representation")]
-    for b in bitrates: 
-        print(b)
     bitrates.sort()
     return bitrates
 
@@ -166,53 +162,46 @@ def client(server_addr, server_port, video_name, alpha, chunks_queue):
     send_req(clientSocket, video_name)
     mpd_file_res = receive_msg(clientSocket)
     if mpd_file_res == "error: file not found":
+        print("Video not found")
         clientSocket.close()
         return
 
     mpd_text = receive_data(clientSocket) # from connectionSocket.sendall(mpd_data)
-    print(mpd_text.decode())  
-
     bitrates = parse_bitrates(mpd_text)
 
     if not os.path.exists("tmp"):
         os.makedirs("tmp")
 
     chunk_num = 0
-    bitrate = bitrates[0] # starting bitrate is always lowest
+    bitrate = bitrates[0]
+    tcurr = 0
 
-    tcurr = 0 # starting throughput should be 0
-
-    while (True): #loop of .m4s files
+    # loop of .m4s files
+    while (True):
         chunk_name = video_name + "_" + str(bitrate) + "_" + str(chunk_num).zfill(5)
-        print(chunk_name)
-
-        tstart = time.time() #start of request
-
+        tstart = time.time()
         send_req(clientSocket, chunk_name)
         res = receive_msg(clientSocket)
-        if res == "error: file not found" or res == "error: IO failed":
-            clientSocket.close() #DC from server if not found
+        if res == "error: file not found":
+            clientSocket.close()
             break #last file
 
         curr_file = open(f"tmp/chunk_{chunk_num}.m4s", "wb")
         data = receive_data(clientSocket)
 
-        tfin = time.time() # end of request
+        tfin = time.time()
 
         curr_file.write(data)
         chunks_queue.put(f"tmp/chunk_{chunk_num}.m4s")
         chunk_num += 1
         
         tnew = calc_tnew(len(data), tstart, tfin)
-        tcurr = update_tcurr(tcurr, alpha, tnew) # len(data) is the chunk size
+        tcurr = update_tcurr(tcurr, alpha, tnew)
         log_entry(time.time() - tnet_start, tstart, tfin, tnew, tcurr, bitrate, chunk_name)
-
-        print(f"Tcurr: {tnew}, bitrate: {bitrate}")
 
         bitrate = update_bitrate(tcurr, bitrates)
 
     clientSocket.close()
-    print("Client session termiated.")
     return
 
 # parse input arguments and pass to the client function

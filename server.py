@@ -37,7 +37,6 @@ def open_file(connectionSocket, path):
     if not os.path.exists(path):
         send_msg(connectionSocket, "error: file not found")
         connectionSocket.close() # DC from client if fail
-        print("error: open file failed")
         return False
     send_msg(connectionSocket, "success: file exist")
     file = open(path, "rb")
@@ -64,9 +63,7 @@ def send_file(connectionSocket, file):
     data = file.read()
     byte_size = len(data)
 
-    print(f"SERVER Size in bytes: {byte_size}")
     req_size_bytes = (str(byte_size).zfill(FSIZE_BYTES)).encode('utf-8')
-    print(f"SERVER Byte size: {req_size_bytes}")
     connectionSocket.sendall(req_size_bytes)
     
     connectionSocket.sendall(data)
@@ -90,7 +87,6 @@ def server(serverPort):
     serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     serverSocket.bind(("", serverPort))
     serverSocket.listen(1)
-    print("Server is ready to recieve connections")
 
     while True:
         connectionSocket, clientAddr = serverSocket.accept()
@@ -107,7 +103,6 @@ def server(serverPort):
         while (True):
             vchunk_name = receive_req(connectionSocket) # recieve chunk_name
             vchunk_path = "./data/" + video_name + "/chunks/" + vchunk_name + ".m4s"
-            print(vchunk_path)
             vchunk_file = open_file(connectionSocket, vchunk_path)
             if not vchunk_file: 
                 break
@@ -115,7 +110,7 @@ def server(serverPort):
             vchunk_file.close()
 
         connectionSocket.close()
-        print("Server disconnected.")
+    return
 
 if __name__ == '__main__':
     listen_port = int(sys.argv[1])
